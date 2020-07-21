@@ -28,16 +28,16 @@ import (
 	"strings"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/pkg/errors"
 
-	"github.com/panther-labs/panther/internal/log_analysis/log_processor/parsers"
 	"github.com/panther-labs/panther/internal/log_analysis/log_processor/parsers/numerics"
-	"github.com/panther-labs/panther/internal/log_analysis/log_processor/parsers/timestamp"
 )
 
 const (
 	DefaultMaxCommentLength = 255
 
 	GlueTimestampType = "timestamp"
+	GlueStringType    = "string"
 )
 
 var (
@@ -47,40 +47,12 @@ var (
 	// GlueMappings for custom Panther types.
 	GlueMappings = []CustomMapping{
 		{
-			From: reflect.TypeOf(timestamp.RFC3339{}),
-			To:   GlueTimestampType,
-		},
-		{
-			From: reflect.TypeOf(timestamp.ANSICwithTZ{}),
-			To:   GlueTimestampType,
-		},
-		{
-			From: reflect.TypeOf(timestamp.UnixMillisecond{}),
-			To:   GlueTimestampType,
-		},
-		{
-			From: reflect.TypeOf(timestamp.FluentdTimestamp{}),
-			To:   GlueTimestampType,
-		},
-		{
-			From: reflect.TypeOf(timestamp.UnixFloat{}),
-			To:   GlueTimestampType,
-		},
-		{
-			From: reflect.TypeOf(timestamp.LaceworkTimestamp{}),
-			To:   GlueTimestampType,
-		},
-		{
-			From: reflect.TypeOf(timestamp.SuricataTimestamp{}),
-			To:   GlueTimestampType,
-		},
-		{
-			From: reflect.TypeOf(parsers.PantherAnyString{}),
-			To:   "array<string>",
-		},
-		{
 			From: reflect.TypeOf(jsoniter.RawMessage{}),
 			To:   "string",
+		},
+		{
+			From: reflect.TypeOf([]jsoniter.RawMessage{}),
+			To:   "array<string>",
 		},
 		{
 			From: reflect.TypeOf(*new(numerics.Integer)),
@@ -126,6 +98,29 @@ var (
 		},
 	}
 )
+
+func MustRegisterMapping(from reflect.Type, to string) {
+	if err := RegisterMapping(from, to); err != nil {
+		panic(err)
+	}
+}
+
+func RegisterMapping(from reflect.Type, to string) error {
+	for _, mapping := range GlueMappings {
+		if mapping.From == from {
+			return errors.New("duplicate mapping")
+		}
+	}
+	GlueMappings = append(GlueMappings, CustomMapping{
+		From: from,
+		To:   to,
+	})
+	return nil
+}
+
+func ArrayOf(typ string) string {
+	return "array<" + typ + ">"
+}
 
 type Column struct {
 	Name     string
@@ -251,7 +246,7 @@ func inferStructFieldType(sf reflect.StructField, customMappingsTable map[string
 	}
 
 	// Rewrite field the same way as the jsoniter extension to avoid invalid column names
-	fieldName = parsers.RewriteFieldName(fieldName)
+	fieldName = RewriteFieldName(fieldName)
 
 	comment = sf.Tag.Get("description")
 
@@ -399,4 +394,22 @@ func parseTag(tag string) (string, string) {
 		return tag[:idx], tag[idx+1:]
 	}
 	return tag, ""
+}
+
+// TODO: [pantherlog] Add more mappings of invalid Athena field name characters here
+// NOTE: The mapping should be easy to remember (so no ASCII code etc) and complex enough
+// to avoid possible conflicts with other fields.
+var fieldNameReplacer = strings.NewReplacer(
+	"@", "_at_sign_",
+	",", "_comma_",
+	"`", "_backtick_",
+	"'", "_apostrophe_",
+)
+
+func RewriteFieldName(name string) string {
+	result := fieldNameReplacer.Replace(name)
+	if result == name {
+		return name
+	}
+	return strings.Trim(result, "_")
 }

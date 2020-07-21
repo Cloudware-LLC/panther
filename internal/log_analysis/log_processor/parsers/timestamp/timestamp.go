@@ -20,8 +20,11 @@ package timestamp
 
 import (
 	"math"
+	"reflect"
 	"strconv"
 	"time"
+
+	"github.com/panther-labs/panther/internal/log_analysis/awsglue"
 )
 
 // These objects are used to read timestamps and ensure a consistent JSON output for timestamps.
@@ -43,6 +46,24 @@ const (
 	//08 Jul 2020 09:00 GMT
 	laceworkTimestampLayout = `"02 Jan 2006 15:04 MST"`
 )
+
+func init() {
+	typANSICwithTZ := reflect.TypeOf(ANSICwithTZ{})
+	typFluentd := reflect.TypeOf(FluentdTimestamp{})
+	typRFC3339 := reflect.TypeOf(RFC3339{})
+	typSuricata := reflect.TypeOf(SuricataTimestamp{})
+	typUnixFloat := reflect.TypeOf(UnixFloat{})
+	typUnixMillis := reflect.TypeOf(UnixMillisecond{})
+	typLacework := reflect.TypeOf(LaceworkTimestamp{})
+	// Add glue table mappings
+	awsglue.MustRegisterMapping(typANSICwithTZ, awsglue.GlueTimestampType)
+	awsglue.MustRegisterMapping(typFluentd, awsglue.GlueTimestampType)
+	awsglue.MustRegisterMapping(typRFC3339, awsglue.GlueTimestampType)
+	awsglue.MustRegisterMapping(typSuricata, awsglue.GlueTimestampType)
+	awsglue.MustRegisterMapping(typUnixFloat, awsglue.GlueTimestampType)
+	awsglue.MustRegisterMapping(typUnixMillis, awsglue.GlueTimestampType)
+	awsglue.MustRegisterMapping(typLacework, awsglue.GlueTimestampType)
+}
 
 // use these functions to parse all incoming dates to ensure UTC consistency
 func Parse(layout, value string) (RFC3339, error) {
